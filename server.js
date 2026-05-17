@@ -224,6 +224,9 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ success: false, error: 'Internal server error' });
 });
 
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-});
+// Listen only in local dev — Vercel manages the HTTP server in production
+if (require.main === module) {
+  app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+}
+
+module.exports = app;
