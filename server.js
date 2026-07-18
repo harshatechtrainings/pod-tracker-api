@@ -27,6 +27,13 @@ const app  = express();
 const PORT       = process.env.PORT       || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-production';
 
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const ENTRY_TYPES = [
+  'task', 'issue', 'analysis', 'meeting', 'review', 'deployment',
+  'planning', 'learning', 'support', 'mentoring', 'testing',
+  'break', 'other',
+];
+
 // ── Middleware ─────────────────────────────────────────────────
 app.use(cors());
 app.use(express.json());
@@ -64,7 +71,7 @@ const entrySchema = new mongoose.Schema(
     type:   {
       type: String,
       required: true,
-      enum: ['task', 'issue', 'analysis', 'meeting', 'review', 'break', 'other'],
+      enum: ENTRY_TYPES,
     },
     date:   { type: String, required: true },        // YYYY-MM-DD
     mins:   { type: Number, required: true, min: 1 },
@@ -162,8 +169,8 @@ app.get('/api/entries', requireAuth, async (req, res, next) => {
 app.get('/api/entries/range', requireAuth, async (req, res, next) => {
   try {
     const { from, to } = req.query;
-    if (!from || !to) {
-      return res.status(400).json({ success: false, error: 'from and to query params required' });
+    if (!from || !to || !DATE_RE.test(from) || !DATE_RE.test(to)) {
+      return res.status(400).json({ success: false, error: 'from and to query params required (YYYY-MM-DD)' });
     }
     const entries = await Entry
       .find({ userId: req.userId, date: { $gte: from, $lte: to } })
@@ -177,6 +184,19 @@ app.get('/api/entries/range', requireAuth, async (req, res, next) => {
 // POST /api/entries — create a new entry
 app.post('/api/entries', requireAuth, async (req, res, next) => {
   try {
+    const { task, type, date, mins } = req.body;
+    if (!task || !String(task).trim()) {
+      return res.status(400).json({ success: false, error: 'task is required' });
+    }
+    if (!type || !ENTRY_TYPES.includes(type)) {
+      return res.status(400).json({ success: false, error: `type must be one of: ${ENTRY_TYPES.join(', ')}` });
+    }
+    if (!date || !DATE_RE.test(date)) {
+      return res.status(400).json({ success: false, error: 'date is required (YYYY-MM-DD)' });
+    }
+    if (mins === undefined || mins === null || Number.isNaN(Number(mins)) || Number(mins) < 1) {
+      return res.status(400).json({ success: false, error: 'mins must be a number >= 1' });
+    }
     const entry = new Entry({ ...req.body, userId: req.userId });
     await entry.save();
     res.status(201).json({ success: true, data: entry });
@@ -188,6 +208,19 @@ app.post('/api/entries', requireAuth, async (req, res, next) => {
 // PUT /api/entries/:id — update an entry (only owner can update)
 app.put('/api/entries/:id', requireAuth, async (req, res, next) => {
   try {
+    const { task, type, date, mins } = req.body;
+    if (task !== undefined && !String(task).trim()) {
+      return res.status(400).json({ success: false, error: 'task cannot be empty' });
+    }
+    if (type !== undefined && !ENTRY_TYPES.includes(type)) {
+      return res.status(400).json({ success: false, error: `type must be one of: ${ENTRY_TYPES.join(', ')}` });
+    }
+    if (date !== undefined && !DATE_RE.test(date)) {
+      return res.status(400).json({ success: false, error: 'date must be in YYYY-MM-DD format' });
+    }
+    if (mins !== undefined && (Number.isNaN(Number(mins)) || Number(mins) < 1)) {
+      return res.status(400).json({ success: false, error: 'mins must be a number >= 1' });
+    }
     const entry = await Entry.findOneAndUpdate(
       { _id: req.params.id, userId: req.userId },
       req.body,
